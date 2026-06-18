@@ -3,9 +3,30 @@
 chcp 65001 > nul
 cd /d "%~dp0"
 
+set "KANA_TRAINER_DIRECT="
+if /I "%~1"=="--direct" (
+    set "KANA_TRAINER_DIRECT=1"
+    shift
+)
+
+if not defined KANA_TRAINER_DIRECT (
+    if not defined WT_SESSION (
+        set "WT_EXE="
+        if exist "%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe" set "WT_EXE=%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe"
+        if not defined WT_EXE (
+            where wt.exe > nul 2> nul
+            if %errorlevel%==0 set "WT_EXE=wt.exe"
+        )
+        if defined WT_EXE (
+            "%WT_EXE%" -p "Kana Trainer" -d "%~dp0" cmd.exe /k ""%~f0" --direct %*"
+            if %errorlevel%==0 exit /b
+        )
+    )
+)
+
 py -3 -V > nul 2> nul
 if %errorlevel%==0 (
-    py -3 -m kana_trainer %*
+    py -3 -m kana_trainer %1 %2 %3 %4 %5 %6 %7 %8 %9
 ) else (
-    python -m kana_trainer %*
+    python -m kana_trainer %1 %2 %3 %4 %5 %6 %7 %8 %9
 )
