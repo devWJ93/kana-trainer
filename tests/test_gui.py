@@ -5,12 +5,13 @@ from kana_trainer.gui import choose_display_font
 
 
 class GuiFontTests(unittest.TestCase):
-    def test_choose_display_font_prefers_yu_gothic_ui(self):
-        available = ("MS Gothic", "Meiryo", "Yu Gothic UI")
+    def test_choose_display_font_prefers_nanum_gothic(self):
+        available = ("MS Gothic", "Meiryo", "Yu Gothic UI", "나눔고딕")
 
-        self.assertEqual(choose_display_font(available), "Yu Gothic UI")
+        self.assertEqual(choose_display_font(available), "나눔고딕")
 
-    def test_choose_display_font_falls_back_to_meiryo_then_ms_gothic(self):
+    def test_choose_display_font_falls_back_to_yu_gothic_then_meiryo(self):
+        self.assertEqual(choose_display_font(("MS Gothic", "Meiryo", "Yu Gothic UI")), "Yu Gothic UI")
         self.assertEqual(choose_display_font(("MS Gothic", "Meiryo")), "Meiryo")
         self.assertEqual(choose_display_font(("Arial", "MS Gothic")), "MS Gothic")
 

@@ -28,7 +28,7 @@ from .quiz import (
 from .settings import AppSettings, SettingsStore, clamp_font_size
 
 InputHandler = Callable[[str], None]
-DISPLAY_FONT_CANDIDATES = ("Yu Gothic UI", "Meiryo", "Yu Gothic", "MS Gothic")
+DISPLAY_FONT_CANDIDATES = ("나눔고딕", "NanumGothic", "Nanum Gothic", "Yu Gothic UI", "Meiryo", "Yu Gothic", "MS Gothic")
 
 
 def choose_display_font(available_fonts: tuple[str, ...]) -> str:
