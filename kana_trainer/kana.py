@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 KanaEntry = tuple[str, str]
+MAX_KANA_LEVEL = 3
+KANA_LEVEL_LABELS: dict[int, str] = {
+    1: "기본",
+    2: "탁음·반탁음",
+    3: "작은 글자 조합",
+}
 
 
 HIRAGANA: tuple[KanaEntry, ...] = (
@@ -368,20 +374,38 @@ BEGINNER_PATTERNS: tuple[str, ...] = (
 )
 
 
-def get_kana(script: str) -> tuple[KanaEntry, ...]:
+def get_kana(script: str, *, level: int | None = None) -> tuple[KanaEntry, ...]:
     normalized = script.strip().lower()
+    selected_level = MAX_KANA_LEVEL if level is None else level
+    if selected_level not in KANA_LEVEL_LABELS:
+        raise ValueError("level must be 1, 2, or 3")
+
     if normalized == "hiragana":
+        if selected_level == 1:
+            return HIRAGANA
+        if selected_level == 2:
+            return HIRAGANA + HIRAGANA_MARKS
         return HIRAGANA + HIRAGANA_MARKS + HIRAGANA_YOON
     if normalized == "katakana":
+        if selected_level == 1:
+            return KATAKANA
+        if selected_level == 2:
+            return KATAKANA + KATAKANA_MARKS
         return KATAKANA + KATAKANA_MARKS + KATAKANA_YOON
     raise ValueError("script must be 'hiragana' or 'katakana'")
 
 
-def pair_by_romaji() -> dict[str, tuple[str, str]]:
-    katakana_by_romaji = {romaji: symbol for symbol, romaji in get_kana("katakana")}
+def get_kana_level_label(level: int) -> str:
+    if level not in KANA_LEVEL_LABELS:
+        raise ValueError("level must be 1, 2, or 3")
+    return KANA_LEVEL_LABELS[level]
+
+
+def pair_by_romaji(*, level: int | None = None) -> dict[str, tuple[str, str]]:
+    katakana_by_romaji = {romaji: symbol for symbol, romaji in get_kana("katakana", level=level)}
     return {
         romaji: (hiragana, katakana_by_romaji[romaji])
-        for hiragana, romaji in get_kana("hiragana")
+        for hiragana, romaji in get_kana("hiragana", level=level)
         if romaji in katakana_by_romaji
     }
 

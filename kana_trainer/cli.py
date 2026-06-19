@@ -10,6 +10,7 @@ from .kana import (
     get_beginner_patterns,
     get_confusing_pairs,
     get_kana,
+    get_kana_level_label,
     get_particles,
     get_reading_examples,
     get_sokuon_examples,
@@ -29,6 +30,7 @@ from .quiz import (
     collect_example_items,
     find_entry_by_romaji,
     is_correct_romaji,
+    kana_level_mode,
 )
 from .terminal import clear_screen, input_prompt, pause_if_interactive
 
@@ -74,6 +76,7 @@ def run_romaji_quiz(
     *,
     history_store: StudyHistoryStore | None = None,
     count: int = KANA_QUESTION_COUNT,
+    mode: str = "romaji",
 ) -> None:
     print(f"\n{title}")
     correct = 0
@@ -93,7 +96,7 @@ def run_romaji_quiz(
 
     print(f"\n결과: {correct}/{count} 정답, 최고 연속 정답 {best_streak}.")
     if history_store is not None:
-        history_store.record_session(title, "romaji", correct=correct, total=count)
+        history_store.record_session(title, mode, correct=correct, total=count)
 
 
 def run_choice_quiz(
@@ -103,6 +106,7 @@ def run_choice_quiz(
     *,
     history_store: StudyHistoryStore | None = None,
     count: int = KANA_QUESTION_COUNT,
+    mode: str = "choice",
 ) -> None:
     print(f"\n{title}")
     correct = 0
@@ -127,7 +131,7 @@ def run_choice_quiz(
 
     print(f"\n결과: {correct}/{count} 정답.")
     if history_store is not None:
-        history_store.record_session(title, "choice", correct=correct, total=count)
+        history_store.record_session(title, mode, correct=correct, total=count)
 
 
 def run_matching_quiz(
@@ -135,10 +139,15 @@ def run_matching_quiz(
     *,
     history_store: StudyHistoryStore | None = None,
     count: int = KANA_QUESTION_COUNT,
+    level: int | None = None,
+    mode: str = "matching",
 ) -> None:
-    pairs = pair_by_romaji()
+    pairs = pair_by_romaji(level=level)
     questions = build_romaji_question_items(tuple((item[0], romaji) for romaji, item in pairs.items()), count=count)
-    print("\n히라가나-가타카나 매칭")
+    title = "히라가나-가타카나 매칭"
+    if level is not None:
+        title = f"{title} Lv.{level} {get_kana_level_label(level)}"
+    print(f"\n{title}")
     correct = 0
 
     for index, (_symbol, romaji) in enumerate(questions, start=1):
@@ -161,7 +170,7 @@ def run_matching_quiz(
 
     print(f"\n결과: {correct}/{count} 정답.")
     if history_store is not None:
-        history_store.record_session("히라가나-가타카나 매칭", "matching", correct=correct, total=count)
+        history_store.record_session(title, mode, correct=correct, total=count)
 
 
 def run_particle_meaning_quiz(
@@ -263,6 +272,70 @@ def run_wrong_answer_review(store: WrongAnswerStore, *, history_store: StudyHist
         print("\n아직 오답 기록이 없습니다.")
         return
     run_romaji_quiz("오답 복습", entries, store, history_store=history_store, count=min(DEFAULT_QUESTION_COUNT, len(entries)))
+
+
+def run_kana_level_menu(
+    script: str,
+    label: str,
+    store: WrongAnswerStore,
+    history_store: StudyHistoryStore,
+    *,
+    quiz_kind: str = "romaji",
+) -> None:
+    while True:
+        if quiz_kind == "matching":
+            unlocked_level = min(history_store.unlocked_kana_level("hiragana"), history_store.unlocked_kana_level("katakana"))
+        else:
+            unlocked_level = history_store.unlocked_kana_level(script)
+        clear_screen()
+        print(f"\n{label} 레벨 선택")
+        for level in (1, 2, 3):
+            status = "해금" if level <= unlocked_level else "잠김"
+            print(f"{level}. Lv.{level} {get_kana_level_label(level)} ({status})")
+        print("0. 돌아가기")
+        choice = input("> ").strip()
+
+        if choice == "0":
+            return
+        if not choice.isdigit() or int(choice) not in (1, 2, 3):
+            print("레벨 번호를 다시 입력하세요.")
+            pause_if_interactive()
+            continue
+
+        level = int(choice)
+        if level > unlocked_level:
+            print("아직 잠긴 레벨입니다. 이전 레벨에서 80% 이상 정답을 기록하면 해금됩니다.")
+            pause_if_interactive()
+            continue
+
+        level_label = get_kana_level_label(level)
+        if quiz_kind == "choice":
+            title = f"{label} 선택 Lv.{level} {level_label}"
+            run_choice_quiz(
+                title,
+                get_kana(script, level=level),
+                store,
+                history_store=history_store,
+                mode=kana_level_mode(script, level, mode="choice"),
+            )
+        elif quiz_kind == "matching":
+            run_matching_quiz(
+                store,
+                history_store=history_store,
+                level=level,
+                mode=f"matching:level{level}",
+            )
+        else:
+            title = f"{label} Lv.{level} {level_label}"
+            run_romaji_quiz(
+                title,
+                get_kana(script, level=level),
+                store,
+                history_store=history_store,
+                mode=kana_level_mode(script, level),
+            )
+        pause_if_interactive()
+        return
 
 
 def print_wrong_answer_summary(store: WrongAnswerStore) -> None:
@@ -382,13 +455,13 @@ def run_menu() -> None:
         choice = input("> ").strip()
 
         if choice == "1":
-            run_romaji_quiz("히라가나 연습", get_kana("hiragana"), store, history_store=history_store)
+            run_kana_level_menu("hiragana", "히라가나", store, history_store)
         elif choice == "2":
-            run_romaji_quiz("가타카나 연습", get_kana("katakana"), store, history_store=history_store)
+            run_kana_level_menu("katakana", "가타카나", store, history_store)
         elif choice == "3":
-            run_choice_quiz("히라가나 4지선다", get_kana("hiragana"), store, history_store=history_store)
+            run_kana_level_menu("hiragana", "히라가나 4지선다", store, history_store, quiz_kind="choice")
         elif choice == "4":
-            run_matching_quiz(store, history_store=history_store)
+            run_kana_level_menu("matching", "히라가나-가타카나 매칭", store, history_store, quiz_kind="matching")
         elif choice == "5":
             run_particle_meaning_quiz(history_store=history_store)
         elif choice == "6":

@@ -12,6 +12,7 @@ from .kana import (
     get_beginner_patterns,
     get_confusing_pairs,
     get_kana,
+    get_kana_level_label,
     get_particles,
     get_reading_examples,
     get_sokuon_examples,
@@ -33,6 +34,7 @@ from .quiz import (
     collect_example_items,
     find_entry_by_romaji,
     is_correct_romaji,
+    kana_level_mode,
 )
 from .settings import MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, AppSettings, SettingsStore, clamp_font_size, window_geometry
 
@@ -427,13 +429,13 @@ class KanaTrainerApp:
 
     def handle_menu_input(self, value: str) -> None:
         if value == "1":
-            self.start_romaji_quiz("히라가나 연습", get_kana("hiragana"))
+            self.show_kana_level_menu("hiragana", "히라가나", "romaji")
         elif value == "2":
-            self.start_romaji_quiz("가타카나 연습", get_kana("katakana"))
+            self.show_kana_level_menu("katakana", "가타카나", "romaji")
         elif value == "3":
-            self.start_choice_quiz("히라가나 4지선다", get_kana("hiragana"))
+            self.show_kana_level_menu("hiragana", "히라가나 4지선다", "choice")
         elif value == "4":
-            self.start_matching_quiz()
+            self.show_kana_level_menu("matching", "히라가나-가타카나 매칭", "matching")
         elif value == "5":
             self.start_particle_meaning_quiz()
         elif value == "6":
@@ -453,11 +455,62 @@ class KanaTrainerApp:
         else:
             self.write("메뉴 번호를 다시 입력하세요.", "bad")
 
-    def start_romaji_quiz(self, title: str, entries: tuple[KanaEntry, ...]) -> None:
+    def show_kana_level_menu(self, script: str, label: str, quiz_kind: str) -> None:
+        self.handler = lambda value: self.handle_kana_level_input(script, label, quiz_kind, value)
+        self.clear_output()
+        self.write(f"{label} 레벨 선택", "title")
+        self.write("")
+        if quiz_kind == "matching":
+            unlocked_level = min(self.history_store.unlocked_kana_level("hiragana"), self.history_store.unlocked_kana_level("katakana"))
+        else:
+            unlocked_level = self.history_store.unlocked_kana_level(script)
+        options: list[MenuOption] = []
+        for level in (1, 2, 3):
+            status = "해금" if level <= unlocked_level else "잠김"
+            label_text = f"Lv.{level} {get_kana_level_label(level)} ({status})"
+            self.write_menu_item(str(level), label_text)
+            options.append((str(level), label_text))
+        self.write_menu_item("0", "돌아가기")
+        options.append(("0", "돌아가기"))
+        self.set_option_buttons(tuple(options))
+
+    def handle_kana_level_input(self, script: str, label: str, quiz_kind: str, value: str) -> None:
+        if value == "0":
+            self.show_main_menu()
+            return
+        if not value.isdigit() or int(value) not in (1, 2, 3):
+            self.write("레벨 번호를 다시 입력하세요.", "bad")
+            return
+        level = int(value)
+        if quiz_kind == "matching":
+            unlocked_level = min(self.history_store.unlocked_kana_level("hiragana"), self.history_store.unlocked_kana_level("katakana"))
+        else:
+            unlocked_level = self.history_store.unlocked_kana_level(script)
+        if level > unlocked_level:
+            self.write("아직 잠긴 레벨입니다. 이전 레벨에서 80% 이상 정답을 기록하면 해금됩니다.", "bad")
+            return
+
+        level_label = get_kana_level_label(level)
+        if quiz_kind == "choice":
+            self.start_choice_quiz(
+                f"{label} Lv.{level} {level_label}",
+                get_kana(script, level=level),
+                mode=kana_level_mode(script, level, mode="choice"),
+            )
+        elif quiz_kind == "matching":
+            self.start_matching_quiz(level=level, mode=f"matching:level{level}")
+        else:
+            self.start_romaji_quiz(
+                f"{label} Lv.{level} {level_label}",
+                get_kana(script, level=level),
+                mode=kana_level_mode(script, level),
+            )
+
+    def start_romaji_quiz(self, title: str, entries: tuple[KanaEntry, ...], *, mode: str = "romaji") -> None:
         questions = tuple(build_kana_question_items(entries, count=KANA_QUESTION_COUNT))
         self.session = QuizSession(
             title=title,
-            mode="romaji",
+            mode=mode,
             entries=entries,
             count=KANA_QUESTION_COUNT,
             question_entries=questions,
@@ -495,11 +548,11 @@ class KanaTrainerApp:
             self.write_segments((("오답. ", "bad"), ("정답은 ", "bad"), (session.expected_romaji, "answer"), (".", "bad")))
         self.next_romaji_question()
 
-    def start_choice_quiz(self, title: str, entries: tuple[KanaEntry, ...]) -> None:
+    def start_choice_quiz(self, title: str, entries: tuple[KanaEntry, ...], *, mode: str = "choice") -> None:
         questions = tuple(build_romaji_question_items(entries, count=KANA_QUESTION_COUNT))
         self.session = QuizSession(
             title=title,
-            mode="choice",
+            mode=mode,
             entries=entries,
             count=KANA_QUESTION_COUNT,
             question_entries=questions,
@@ -536,20 +589,23 @@ class KanaTrainerApp:
             self.write_segments((("오답. ", "bad"), ("정답은 ", "bad"), (session.expected_romaji, "answer"), (".", "bad")))
         self.next_choice_question()
 
-    def start_matching_quiz(self) -> None:
-        pairs = pair_by_romaji()
+    def start_matching_quiz(self, *, level: int | None = None, mode: str = "matching") -> None:
+        pairs = pair_by_romaji(level=level)
         entries = tuple((item[0], romaji) for romaji, item in pairs.items())
         questions = tuple(build_romaji_question_items(entries, count=KANA_QUESTION_COUNT))
+        title = "히라가나-가타카나 매칭"
+        if level is not None:
+            title = f"{title} Lv.{level} {get_kana_level_label(level)}"
         self.session = QuizSession(
-            title="히라가나-가타카나 매칭",
-            mode="matching",
+            title=title,
+            mode=mode,
             entries=entries,
             count=KANA_QUESTION_COUNT,
             question_entries=questions,
         )
         self.handler = self.handle_matching_answer
         self.clear_output()
-        self.write("히라가나-가타카나 매칭")
+        self.write(title)
         self.next_matching_question()
 
     def next_matching_question(self) -> None:
@@ -558,7 +614,7 @@ class KanaTrainerApp:
             self.finish_session()
             return
         session.index += 1
-        pairs = pair_by_romaji()
+        pairs = pair_by_romaji(level=self.matching_level_from_mode(session.mode))
         _symbol, romaji = session.question_entries[session.index - 1]
         hiragana, katakana = pairs[romaji]
         katakana_entries = tuple((item[1], key) for key, item in pairs.items())
@@ -580,6 +636,15 @@ class KanaTrainerApp:
             self.store.record(session.expected_symbol, session.expected_romaji, value)
             self.write_segments((("오답. ", "bad"), ("정답은 ", "bad"), (session.expected_symbol, "answer"), (".", "bad")))
         self.next_matching_question()
+
+    def matching_level_from_mode(self, mode: str) -> int | None:
+        prefix = "matching:level"
+        if not mode.startswith(prefix):
+            return None
+        try:
+            return int(mode.removeprefix(prefix))
+        except ValueError:
+            return None
 
     def start_particle_meaning_quiz(self) -> None:
         entries = tuple((str(item["particle"]), str(item["meaning"])) for item in get_particles())
@@ -726,7 +791,7 @@ class KanaTrainerApp:
 
     def finish_session(self) -> None:
         session = self.require_session()
-        if session.mode == "romaji":
+        if session.mode.startswith("romaji"):
             self.write("")
             self.write(f"결과: {session.correct}/{session.count} 정답, 최고 연속 정답 {session.best_streak}.", "result")
         else:

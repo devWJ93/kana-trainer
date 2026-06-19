@@ -14,6 +14,7 @@ ConfusingItem = tuple[str, str, str, str, str, str]
 ExampleItem = tuple[str, str, str, str, str, str]
 ParticleMeaningChoice = tuple[str, str]
 ParticleItem = dict[str, object]
+KANA_LEVEL_UNLOCK_ACCURACY = 80.0
 
 ROMAJI_ALIASES: dict[str, set[str]] = {
     "shi": {"shi", "si"},
@@ -75,6 +76,10 @@ class StudyHistorySummary:
 
 def normalize_romaji(value: str) -> str:
     return value.strip().lower()
+
+
+def kana_level_mode(script: str, level: int, *, mode: str = "romaji") -> str:
+    return f"{mode}:{script.strip().lower()}:level{level}"
 
 
 def is_correct_romaji(answer: str, expected: str) -> bool:
@@ -371,6 +376,16 @@ class StudyHistoryStore:
         for record in summary.recent:
             lines.append(f"- {record.created_at} {record.title}: {record.correct}/{record.questions} ({record.accuracy:.1f}%)")
         return tuple(lines)
+
+    def unlocked_kana_level(self, script: str) -> int:
+        normalized_script = script.strip().lower()
+        unlocked = 1
+        records = tuple(self._record_from_item(item) for item in self.load())
+        for level in (1, 2):
+            required_mode = kana_level_mode(normalized_script, level)
+            if any(record.mode == required_mode and record.accuracy >= KANA_LEVEL_UNLOCK_ACCURACY for record in records):
+                unlocked = level + 1
+        return unlocked
 
     def _record_from_item(self, item: dict[str, object]) -> StudySessionRecord:
         return StudySessionRecord(

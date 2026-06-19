@@ -5,6 +5,7 @@ from pathlib import Path
 
 from kana_trainer.cli import KANA_QUESTION_COUNT
 from kana_trainer.kana import (
+    get_kana_level_label,
     get_beginner_patterns,
     get_confusing_pairs,
     get_kana,
@@ -50,6 +51,16 @@ class KanaDataTests(unittest.TestCase):
         self.assertIn(("ガ", "ga"), katakana)
         self.assertIn(("パ", "pa"), katakana)
         self.assertIn(("キャ", "kya"), katakana)
+
+    def test_get_kana_level_filters_basic_marks_and_yoon(self):
+        self.assertIn(("か", "ka"), get_kana("hiragana", level=1))
+        self.assertNotIn(("が", "ga"), get_kana("hiragana", level=1))
+        self.assertNotIn(("きゃ", "kya"), get_kana("hiragana", level=1))
+
+        self.assertIn(("が", "ga"), get_kana("hiragana", level=2))
+        self.assertNotIn(("きゃ", "kya"), get_kana("hiragana", level=2))
+        self.assertIn(("きゃ", "kya"), get_kana("hiragana", level=3))
+        self.assertEqual(get_kana_level_label(2), "탁음·반탁음")
 
     def test_pair_by_romaji_matches_scripts(self):
         pairs = pair_by_romaji()
@@ -175,6 +186,18 @@ class QuizLogicTests(unittest.TestCase):
         self.assertEqual(summary.by_title["히라가나 연습"].questions, 20)
         self.assertEqual(summary.recent[0].title, "히라가나 4지선다")
         self.assertEqual(summary.recent[0].accuracy, 80.0)
+
+    def test_study_history_unlocks_kana_levels_by_accuracy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = StudyHistoryStore(Path(temp_dir) / "history.json")
+
+            self.assertEqual(store.unlocked_kana_level("hiragana"), 1)
+            store.record_session("히라가나 Lv.1 기본", "romaji:hiragana:level1", correct=16, total=20)
+            self.assertEqual(store.unlocked_kana_level("hiragana"), 2)
+            store.record_session("히라가나 Lv.2 탁음·반탁음", "romaji:hiragana:level2", correct=15, total=20)
+            self.assertEqual(store.unlocked_kana_level("hiragana"), 2)
+            store.record_session("히라가나 Lv.2 탁음·반탁음", "romaji:hiragana:level2", correct=16, total=20)
+            self.assertEqual(store.unlocked_kana_level("hiragana"), 3)
 
     def test_study_history_summary_lines_handles_empty_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
