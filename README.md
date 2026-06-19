@@ -42,7 +42,7 @@ python -m kana_trainer --demo
 
 오답 기록은 기본적으로 사용자 홈의 `.kana-trainer/wrong-answers.json`에 저장됩니다. 다른 위치를 쓰려면 `KANA_TRAINER_WRONG_PATH` 환경변수를 설정하면 됩니다.
 
-GUI에서는 `A-`, `A+`, `Ctrl+마우스 휠`로 글자 크기를 조절할 수 있습니다. 설정은 사용자 홈의 `.kana-trainer/settings.json`에 저장됩니다.
+GUI에서는 `A-`, `A+`, `Ctrl+마우스 휠`로 글자 크기를 조절할 수 있습니다. 글자 크기, 마지막 창 크기, 창 위치는 사용자 홈의 `.kana-trainer/settings.json`에 저장됩니다.
 
 GUI 표시 폰트는 `나눔고딕`, `NanumGothic`, `Nanum Gothic`, `Yu Gothic UI`, `Meiryo`, `Yu Gothic`, `MS Gothic` 순서로 사용할 수 있는 폰트를 자동 선택합니다.
 

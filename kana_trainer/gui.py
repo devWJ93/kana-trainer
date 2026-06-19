@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 import tkinter as tk
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from tkinter import font, scrolledtext, ttk
 from typing import Callable
 
@@ -25,7 +25,7 @@ from .quiz import (
     is_correct_romaji,
     random_prompt,
 )
-from .settings import AppSettings, SettingsStore, clamp_font_size
+from .settings import MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, AppSettings, SettingsStore, clamp_font_size, window_geometry
 
 InputHandler = Callable[[str], None]
 MenuOption = tuple[str, str]
@@ -115,8 +115,8 @@ class KanaTrainerApp:
         self.focus_after_id: str | None = None
 
         self.root.title("Kana Trainer")
-        self.root.geometry("920x680")
-        self.root.minsize(680, 460)
+        self.root.geometry(window_geometry(self.settings))
+        self.root.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         self.root.configure(bg=GLASS_THEME["background"])
 
         display_font = choose_display_font(font.families(root))
@@ -285,6 +285,7 @@ class KanaTrainerApp:
         self.root.bind("<Escape>", lambda _event: self.show_main_menu())
         self.root.bind("<Control-MouseWheel>", self.handle_ctrl_wheel)
         self.root.bind("<Destroy>", self.cancel_pending_focus, add="+")
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.focus_after_id = self.root.after(100, self.focus_entry)
 
     def cancel_pending_focus(self, event: tk.Event) -> None:
@@ -309,11 +310,26 @@ class KanaTrainerApp:
 
     def change_font_size(self, delta: int) -> None:
         next_size = clamp_font_size(self.settings.font_size + delta)
-        self.settings = AppSettings(font_size=next_size)
+        self.settings = replace(self.settings, font_size=next_size)
         self.settings_store.save(self.settings)
         self.text_font.configure(size=next_size)
         self.emphasis_font.configure(size=next_size)
         self.status_var.set(f"폰트 크기 {next_size} | Enter 제출 | Esc 메뉴 | Ctrl+휠 글자 크기")
+
+    def save_window_size(self) -> None:
+        try:
+            width = self.root.winfo_width()
+            height = self.root.winfo_height()
+            x = self.root.winfo_x()
+            y = self.root.winfo_y()
+        except tk.TclError:
+            return
+        self.settings = replace(self.settings, window_width=width, window_height=height, window_x=x, window_y=y)
+        self.settings_store.save(self.settings)
+
+    def close(self) -> None:
+        self.save_window_size()
+        self.root.destroy()
 
     def clear_output(self) -> None:
         self.output.configure(state=tk.NORMAL)
@@ -406,7 +422,7 @@ class KanaTrainerApp:
         elif value == "7":
             self.show_reference_menu()
         elif value == "0":
-            self.root.destroy()
+            self.close()
         else:
             self.write("메뉴 번호를 다시 입력하세요.", "bad")
 
