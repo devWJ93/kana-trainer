@@ -17,6 +17,7 @@ from .kana import (
     pair_by_romaji,
 )
 from .quiz import (
+    StudyHistoryStore,
     WrongAnswerStore,
     build_multiple_choice,
     find_entry_by_romaji,
@@ -42,6 +43,13 @@ def default_store_path() -> Path:
     return Path.home() / ".kana-trainer" / "wrong-answers.json"
 
 
+def default_history_path() -> Path:
+    configured = os.environ.get("KANA_TRAINER_HISTORY_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".kana-trainer" / "study-history.json"
+
+
 def ask_question(symbol: str, romaji: str, store: WrongAnswerStore) -> bool:
     answer = input(input_prompt(f"{symbol} 의 읽는 법은?"))
     if is_correct_romaji(answer, romaji):
@@ -57,6 +65,7 @@ def run_romaji_quiz(
     entries: tuple[tuple[str, str], ...],
     store: WrongAnswerStore,
     *,
+    history_store: StudyHistoryStore | None = None,
     count: int = DEFAULT_QUESTION_COUNT,
 ) -> None:
     print(f"\n{title}")
@@ -76,6 +85,8 @@ def run_romaji_quiz(
             streak = 0
 
     print(f"\n결과: {correct}/{count} 정답, 최고 연속 정답 {best_streak}.")
+    if history_store is not None:
+        history_store.record_session(title, "romaji", correct=correct, total=count)
 
 
 def run_choice_quiz(
@@ -83,6 +94,7 @@ def run_choice_quiz(
     entries: tuple[tuple[str, str], ...],
     store: WrongAnswerStore,
     *,
+    history_store: StudyHistoryStore | None = None,
     count: int = DEFAULT_QUESTION_COUNT,
 ) -> None:
     print(f"\n{title}")
@@ -107,9 +119,16 @@ def run_choice_quiz(
         print(f"오답. 정답은 {romaji}.")
 
     print(f"\n결과: {correct}/{count} 정답.")
+    if history_store is not None:
+        history_store.record_session(title, "choice", correct=correct, total=count)
 
 
-def run_matching_quiz(store: WrongAnswerStore, *, count: int = DEFAULT_QUESTION_COUNT) -> None:
+def run_matching_quiz(
+    store: WrongAnswerStore,
+    *,
+    history_store: StudyHistoryStore | None = None,
+    count: int = DEFAULT_QUESTION_COUNT,
+) -> None:
     pairs = pair_by_romaji()
     romaji_values = list(pairs.keys())
     print("\n히라가나-가타카나 매칭")
@@ -135,14 +154,16 @@ def run_matching_quiz(store: WrongAnswerStore, *, count: int = DEFAULT_QUESTION_
         print(f"오답. 정답은 {katakana}.")
 
     print(f"\n결과: {correct}/{count} 정답.")
+    if history_store is not None:
+        history_store.record_session("히라가나-가타카나 매칭", "matching", correct=correct, total=count)
 
 
-def run_wrong_answer_review(store: WrongAnswerStore) -> None:
+def run_wrong_answer_review(store: WrongAnswerStore, *, history_store: StudyHistoryStore | None = None) -> None:
     entries = store.as_entries()
     if not entries:
         print("\n아직 오답 기록이 없습니다.")
         return
-    run_romaji_quiz("오답 복습", entries, store, count=min(DEFAULT_QUESTION_COUNT, len(entries)))
+    run_romaji_quiz("오답 복습", entries, store, history_store=history_store, count=min(DEFAULT_QUESTION_COUNT, len(entries)))
 
 
 def print_wrong_answer_summary(store: WrongAnswerStore) -> None:
@@ -154,6 +175,12 @@ def print_wrong_answer_summary(store: WrongAnswerStore) -> None:
     print("\n오답 기록")
     for symbol, item in sorted(data.items(), key=lambda pair: int(pair[1]["count"]), reverse=True):
         print(f"- {symbol}: {item['romaji']} ({item['count']}회, 마지막 입력 {item['last_answer']})")
+
+
+def print_study_history_summary(history_store: StudyHistoryStore) -> None:
+    print()
+    for line in history_store.summary_lines():
+        print(line)
 
 
 def print_reference_for_script(script: str) -> None:
@@ -236,6 +263,7 @@ def run_demo() -> None:
 def run_menu() -> None:
     configure_stdio()
     store = WrongAnswerStore(default_store_path())
+    history_store = StudyHistoryStore(default_history_path())
 
     while True:
         clear_screen()
@@ -246,23 +274,26 @@ def run_menu() -> None:
         print("4. 히라가나-가타카나 매칭")
         print("5. 오답 복습")
         print("6. 오답 기록 보기")
-        print("7. 일본어.md 참고 자료 보기")
+        print("7. 학습 기록 보기")
+        print("8. 일본어.md 참고 자료 보기")
         print("0. 종료")
         choice = input("> ").strip()
 
         if choice == "1":
-            run_romaji_quiz("히라가나 연습", get_kana("hiragana"), store)
+            run_romaji_quiz("히라가나 연습", get_kana("hiragana"), store, history_store=history_store)
         elif choice == "2":
-            run_romaji_quiz("가타카나 연습", get_kana("katakana"), store)
+            run_romaji_quiz("가타카나 연습", get_kana("katakana"), store, history_store=history_store)
         elif choice == "3":
-            run_choice_quiz("히라가나 4지선다", get_kana("hiragana"), store)
+            run_choice_quiz("히라가나 4지선다", get_kana("hiragana"), store, history_store=history_store)
         elif choice == "4":
-            run_matching_quiz(store)
+            run_matching_quiz(store, history_store=history_store)
         elif choice == "5":
-            run_wrong_answer_review(store)
+            run_wrong_answer_review(store, history_store=history_store)
         elif choice == "6":
             print_wrong_answer_summary(store)
         elif choice == "7":
+            print_study_history_summary(history_store)
+        elif choice == "8":
             run_reference_menu()
         elif choice == "0":
             print("다음에 또 연습해요.")

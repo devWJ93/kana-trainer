@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from tkinter import font, scrolledtext, ttk
 from typing import Callable
 
-from .cli import DEFAULT_QUESTION_COUNT, default_store_path
+from .cli import DEFAULT_QUESTION_COUNT, default_history_path, default_store_path
 from .kana import (
     KanaEntry,
     get_beginner_patterns,
@@ -19,6 +19,7 @@ from .kana import (
     pair_by_romaji,
 )
 from .quiz import (
+    StudyHistoryStore,
     WrongAnswerStore,
     build_multiple_choice,
     find_entry_by_romaji,
@@ -53,7 +54,8 @@ MAIN_MENU_OPTIONS: tuple[MenuOption, ...] = (
     ("4", "히라가나-가타카나 매칭"),
     ("5", "오답 복습"),
     ("6", "오답 기록 보기"),
-    ("7", "일본어.md 참고 자료 보기"),
+    ("7", "학습 기록 보기"),
+    ("8", "일본어.md 참고 자료 보기"),
     ("0", "종료"),
 )
 REFERENCE_MENU_OPTIONS: tuple[MenuOption, ...] = (
@@ -110,6 +112,7 @@ class KanaTrainerApp:
         self.settings_store = SettingsStore()
         self.settings = self.settings_store.load()
         self.store = WrongAnswerStore(default_store_path())
+        self.history_store = StudyHistoryStore(default_history_path())
         self.handler: InputHandler = self.handle_menu_input
         self.session: QuizSession | None = None
         self.focus_after_id: str | None = None
@@ -420,6 +423,8 @@ class KanaTrainerApp:
         elif value == "6":
             self.show_wrong_answer_summary()
         elif value == "7":
+            self.show_study_history_summary()
+        elif value == "8":
             self.show_reference_menu()
         elif value == "0":
             self.close()
@@ -552,6 +557,7 @@ class KanaTrainerApp:
         else:
             self.write("")
             self.write(f"결과: {session.correct}/{session.count} 정답.", "result")
+        self.history_store.record_session(session.title, session.mode, correct=session.correct, total=session.count)
         self.write("")
         self.write("메뉴로 돌아가려면 Enter 또는 Esc를 누르세요.", "muted")
         self.set_option_buttons((("", "메뉴로 돌아가기"),))
@@ -589,6 +595,15 @@ class KanaTrainerApp:
             self.write("오답 기록")
             for symbol, item in sorted(data.items(), key=lambda pair: int(pair[1]["count"]), reverse=True):
                 self.write(f"- {symbol}: {item['romaji']} ({item['count']}회, 마지막 입력 {item['last_answer']})")
+        self.write("")
+        self.write("메뉴로 돌아가려면 Enter 또는 Esc를 누르세요.", "muted")
+        self.handler = lambda _value: self.show_main_menu()
+
+    def show_study_history_summary(self) -> None:
+        self.clear_output()
+        self.set_option_buttons((("", "메뉴로 돌아가기"),))
+        for line in self.history_store.summary_lines():
+            self.write(line, "result" if line == "학습 기록" else None)
         self.write("")
         self.write("메뉴로 돌아가려면 Enter 또는 Esc를 누르세요.", "muted")
         self.handler = lambda _value: self.show_main_menu()

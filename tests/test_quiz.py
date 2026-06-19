@@ -13,6 +13,7 @@ from kana_trainer.kana import (
     pair_by_romaji,
 )
 from kana_trainer.quiz import (
+    StudyHistoryStore,
     WrongAnswerStore,
     build_multiple_choice,
     find_entry_by_romaji,
@@ -92,6 +93,33 @@ class QuizLogicTests(unittest.TestCase):
         self.assertEqual(misses["し"]["count"], 2)
         self.assertEqual(misses["し"]["romaji"], "shi")
         self.assertEqual(misses["ツ"]["last_answer"], "su")
+
+    def test_study_history_store_records_sessions_and_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "history.json"
+            store = StudyHistoryStore(path)
+
+            store.record_session("히라가나 연습", "romaji", correct=8, total=10, created_at="2026-06-19T09:00:00")
+            store.record_session("히라가나 연습", "romaji", correct=6, total=10, created_at="2026-06-19T09:10:00")
+            store.record_session("히라가나 4지선다", "choice", correct=4, total=5, created_at="2026-06-19T09:20:00")
+            summary = store.summary()
+
+        self.assertEqual(summary.total_sessions, 3)
+        self.assertEqual(summary.total_correct, 18)
+        self.assertEqual(summary.total_questions, 25)
+        self.assertEqual(summary.accuracy, 72.0)
+        self.assertEqual(summary.by_title["히라가나 연습"].correct, 14)
+        self.assertEqual(summary.by_title["히라가나 연습"].questions, 20)
+        self.assertEqual(summary.recent[0].title, "히라가나 4지선다")
+        self.assertEqual(summary.recent[0].accuracy, 80.0)
+
+    def test_study_history_summary_lines_handles_empty_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = StudyHistoryStore(Path(temp_dir) / "history.json")
+
+            lines = store.summary_lines()
+
+        self.assertEqual(lines, ("아직 학습 기록이 없습니다.",))
 
 
 if __name__ == "__main__":

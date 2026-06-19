@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -22,6 +23,49 @@ ROMAJI_ALIASES: dict[str, set[str]] = {
 class Prompt:
     symbol: str
     romaji: str
+
+
+@dataclass(frozen=True)
+class StudySessionRecord:
+    title: str
+    mode: str
+    correct: int
+    questions: int
+    created_at: str
+
+    @property
+    def accuracy(self) -> float:
+        if self.questions <= 0:
+            return 0.0
+        return round(self.correct / self.questions * 100, 1)
+
+
+@dataclass(frozen=True)
+class StudyTitleSummary:
+    sessions: int
+    correct: int
+    questions: int
+
+    @property
+    def accuracy(self) -> float:
+        if self.questions <= 0:
+            return 0.0
+        return round(self.correct / self.questions * 100, 1)
+
+
+@dataclass(frozen=True)
+class StudyHistorySummary:
+    total_sessions: int
+    total_correct: int
+    total_questions: int
+    by_title: dict[str, StudyTitleSummary]
+    recent: tuple[StudySessionRecord, ...]
+
+    @property
+    def accuracy(self) -> float:
+        if self.total_questions <= 0:
+            return 0.0
+        return round(self.total_correct / self.total_questions * 100, 1)
 
 
 def normalize_romaji(value: str) -> str:
@@ -102,3 +146,102 @@ class WrongAnswerStore:
     def as_entries(self) -> tuple[KanaEntry, ...]:
         data = self.load()
         return tuple((symbol, str(item["romaji"])) for symbol, item in data.items())
+
+
+class StudyHistoryStore:
+    def __init__(self, path: Path):
+        self.path = path
+
+    def load(self) -> list[dict[str, object]]:
+        if not self.path.exists():
+            return []
+        try:
+            with self.path.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+        except (OSError, json.JSONDecodeError):
+            return []
+        if not isinstance(data, dict):
+            return []
+        sessions = data.get("sessions", [])
+        if not isinstance(sessions, list):
+            return []
+        return [item for item in sessions if isinstance(item, dict)]
+
+    def record_session(
+        self,
+        title: str,
+        mode: str,
+        *,
+        correct: int,
+        total: int,
+        created_at: str | None = None,
+    ) -> None:
+        sessions = self.load()
+        sessions.append(
+            {
+                "title": title,
+                "mode": mode,
+                "correct": max(0, int(correct)),
+                "questions": max(0, int(total)),
+                "created_at": created_at or datetime.now().isoformat(timespec="seconds"),
+            }
+        )
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("w", encoding="utf-8") as file:
+            json.dump({"sessions": sessions}, file, ensure_ascii=False, indent=2)
+
+    def summary(self, *, recent_limit: int = 5) -> StudyHistorySummary:
+        records = tuple(self._record_from_item(item) for item in self.load())
+        total_correct = sum(record.correct for record in records)
+        total_questions = sum(record.questions for record in records)
+        by_title_values: dict[str, StudyTitleSummary] = {}
+        for record in records:
+            current = by_title_values.get(record.title, StudyTitleSummary(sessions=0, correct=0, questions=0))
+            by_title_values[record.title] = StudyTitleSummary(
+                sessions=current.sessions + 1,
+                correct=current.correct + record.correct,
+                questions=current.questions + record.questions,
+            )
+        recent = tuple(reversed(records[-recent_limit:]))
+        return StudyHistorySummary(
+            total_sessions=len(records),
+            total_correct=total_correct,
+            total_questions=total_questions,
+            by_title=by_title_values,
+            recent=recent,
+        )
+
+    def summary_lines(self) -> tuple[str, ...]:
+        summary = self.summary()
+        if summary.total_sessions == 0:
+            return ("아직 학습 기록이 없습니다.",)
+
+        lines = [
+            "학습 기록",
+            f"전체 정답률: {summary.total_correct}/{summary.total_questions} ({summary.accuracy:.1f}%)",
+            f"총 학습 세션: {summary.total_sessions}회",
+            "",
+            "모드별 정답률",
+        ]
+        for title, item in sorted(summary.by_title.items()):
+            lines.append(f"- {title}: {item.correct}/{item.questions} ({item.accuracy:.1f}%), {item.sessions}회")
+
+        lines.extend(["", "최근 기록"])
+        for record in summary.recent:
+            lines.append(f"- {record.created_at} {record.title}: {record.correct}/{record.questions} ({record.accuracy:.1f}%)")
+        return tuple(lines)
+
+    def _record_from_item(self, item: dict[str, object]) -> StudySessionRecord:
+        return StudySessionRecord(
+            title=str(item.get("title", "알 수 없는 학습")),
+            mode=str(item.get("mode", "")),
+            correct=self._safe_int(item.get("correct")),
+            questions=self._safe_int(item.get("questions")),
+            created_at=str(item.get("created_at", "")),
+        )
+
+    def _safe_int(self, value: object) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
