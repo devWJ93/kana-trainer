@@ -18,12 +18,14 @@ from .kana import (
 from .quiz import (
     StudyHistoryStore,
     WrongAnswerStore,
+    build_confusing_question_items,
     build_example_question_items,
     build_kana_question_items,
     build_multiple_choice,
     build_particle_meaning_choice,
     build_particle_question_items,
     build_romaji_question_items,
+    collect_confusing_items,
     collect_example_items,
     find_entry_by_romaji,
     is_correct_romaji,
@@ -222,6 +224,39 @@ def run_example_romaji_quiz(
         history_store.record_session("예문 로마자 입력", "example", correct=correct, total=count)
 
 
+def run_confusing_character_quiz(
+    store: WrongAnswerStore,
+    *,
+    history_store: StudyHistoryStore | None = None,
+    count: int = DEFAULT_QUESTION_COUNT,
+) -> None:
+    questions = build_confusing_question_items(collect_confusing_items(), count=count)
+    print("\n헷갈리는 문자 선택")
+    correct = 0
+
+    for index, (script_label, symbol, romaji, other_symbol, other_romaji, note) in enumerate(questions, start=1):
+        choices = build_kana_question_items(((symbol, romaji), (other_symbol, other_romaji)), count=2)
+        print(f"\n문제 {index}/{count}: [{script_label}] {romaji} 에 해당하는 문자는?")
+        for choice_index, (choice_symbol, _choice_romaji) in enumerate(choices, start=1):
+            print(f"{choice_index}. {choice_symbol}")
+
+        answer = input("> ").strip()
+        if answer.isdigit() and 1 <= int(answer) <= len(choices):
+            picked_symbol, _picked_romaji = choices[int(answer) - 1]
+            if picked_symbol == symbol:
+                print("정답.")
+                print(f"힌트: {note}")
+                correct += 1
+                continue
+        print(f"오답. 정답은 {symbol}.")
+        print(f"힌트: {note}")
+        store.record(symbol, romaji, answer)
+
+    print(f"\n결과: {correct}/{count} 정답.")
+    if history_store is not None:
+        history_store.record_session("헷갈리는 문자 선택", "confusing", correct=correct, total=count)
+
+
 def run_wrong_answer_review(store: WrongAnswerStore, *, history_store: StudyHistoryStore | None = None) -> None:
     entries = store.as_entries()
     if not entries:
@@ -338,10 +373,11 @@ def run_menu() -> None:
         print("4. 히라가나-가타카나 매칭")
         print("5. 조사 뜻 맞히기")
         print("6. 예문 로마자 입력")
-        print("7. 오답 복습")
-        print("8. 오답 기록 보기")
-        print("9. 학습 기록 보기")
-        print("10. 일본어.md 참고 자료 보기")
+        print("7. 헷갈리는 문자 선택")
+        print("8. 오답 복습")
+        print("9. 오답 기록 보기")
+        print("10. 학습 기록 보기")
+        print("11. 일본어.md 참고 자료 보기")
         print("0. 종료")
         choice = input("> ").strip()
 
@@ -358,12 +394,14 @@ def run_menu() -> None:
         elif choice == "6":
             run_example_romaji_quiz(store, history_store=history_store)
         elif choice == "7":
-            run_wrong_answer_review(store, history_store=history_store)
+            run_confusing_character_quiz(store, history_store=history_store)
         elif choice == "8":
-            print_wrong_answer_summary(store)
+            run_wrong_answer_review(store, history_store=history_store)
         elif choice == "9":
-            print_study_history_summary(history_store)
+            print_wrong_answer_summary(store)
         elif choice == "10":
+            print_study_history_summary(history_store)
+        elif choice == "11":
             run_reference_menu()
         elif choice == "0":
             print("다음에 또 연습해요.")

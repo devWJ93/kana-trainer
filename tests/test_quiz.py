@@ -16,6 +16,7 @@ from kana_trainer.kana import (
 from kana_trainer.quiz import (
     StudyHistoryStore,
     WrongAnswerStore,
+    build_confusing_question_items,
     build_example_question_items,
     build_kana_question_items,
     build_multiple_choice,
@@ -23,6 +24,7 @@ from kana_trainer.quiz import (
     build_particle_question_items,
     build_romaji_question_items,
     collect_example_items,
+    collect_confusing_items,
     find_entry_by_romaji,
     is_correct_romaji,
 )
@@ -122,6 +124,19 @@ class QuizLogicTests(unittest.TestCase):
 
         self.assertEqual(len(questions), 10)
         self.assertEqual(len({item[2] for item in questions}), 10)
+
+    def test_collect_confusing_items_builds_questions_for_both_sides(self):
+        items = collect_confusing_items()
+
+        self.assertEqual(len(items), 20)
+        self.assertIn(("히라가나", "し", "shi", "つ", "tsu", "し는 왼쪽 열림 / つ는 오른쪽 열림"), items)
+        self.assertIn(("가타카나", "ツ", "tsu", "シ", "shi", "シ는 왼쪽 열림 / ツ는 오른쪽 열림"), items)
+
+    def test_build_confusing_question_items_avoids_target_repeats(self):
+        questions = build_confusing_question_items(collect_confusing_items(), count=10, rng_seed=7)
+
+        self.assertEqual(len(questions), 10)
+        self.assertEqual(len({(item[0], item[1]) for item in questions}), 10)
 
     def test_find_entry_by_romaji_returns_expected_symbol(self):
         self.assertEqual(find_entry_by_romaji("ka", get_kana("hiragana")), ("か", "ka"))

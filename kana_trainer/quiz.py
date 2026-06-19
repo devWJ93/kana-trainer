@@ -8,8 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
-from .kana import KanaEntry, get_reading_examples, get_sokuon_examples
+from .kana import KanaEntry, get_confusing_pairs, get_kana, get_reading_examples, get_sokuon_examples
 
+ConfusingItem = tuple[str, str, str, str, str, str]
 ExampleItem = tuple[str, str, str, str, str, str]
 ParticleMeaningChoice = tuple[str, str]
 ParticleItem = dict[str, object]
@@ -198,6 +199,37 @@ def build_example_question_items(
     rng_seed: int | None = None,
 ) -> list[ExampleItem]:
     pool = list(examples)
+    if count < 0:
+        raise ValueError("question count must be zero or greater")
+    if count <= len(pool):
+        return random.Random(rng_seed).sample(pool, count)
+
+    rng = random.Random(rng_seed)
+    questions = pool[:]
+    rng.shuffle(questions)
+    questions.extend(rng.choice(pool) for _index in range(count - len(pool)))
+    return questions
+
+
+def collect_confusing_items() -> tuple[ConfusingItem, ...]:
+    items: list[ConfusingItem] = []
+    for script, script_label in (("hiragana", "히라가나"), ("katakana", "가타카나")):
+        romaji_by_symbol = dict(get_kana(script))
+        for left, right, note in get_confusing_pairs(script):
+            left_romaji = romaji_by_symbol[left]
+            right_romaji = romaji_by_symbol[right]
+            items.append((script_label, left, left_romaji, right, right_romaji, note))
+            items.append((script_label, right, right_romaji, left, left_romaji, note))
+    return tuple(items)
+
+
+def build_confusing_question_items(
+    items: Iterable[ConfusingItem],
+    *,
+    count: int,
+    rng_seed: int | None = None,
+) -> list[ConfusingItem]:
+    pool = list(items)
     if count < 0:
         raise ValueError("question count must be zero or greater")
     if count <= len(pool):

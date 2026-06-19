@@ -18,15 +18,18 @@ from .kana import (
     pair_by_romaji,
 )
 from .quiz import (
+    ConfusingItem,
     ExampleItem,
     StudyHistoryStore,
     WrongAnswerStore,
+    build_confusing_question_items,
     build_example_question_items,
     build_kana_question_items,
     build_multiple_choice,
     build_particle_meaning_choice,
     build_particle_question_items,
     build_romaji_question_items,
+    collect_confusing_items,
     collect_example_items,
     find_entry_by_romaji,
     is_correct_romaji,
@@ -59,10 +62,11 @@ MAIN_MENU_OPTIONS: tuple[MenuOption, ...] = (
     ("4", "히라가나-가타카나 매칭"),
     ("5", "조사 뜻 맞히기"),
     ("6", "예문 로마자 입력"),
-    ("7", "오답 복습"),
-    ("8", "오답 기록 보기"),
-    ("9", "학습 기록 보기"),
-    ("10", "일본어.md 참고 자료 보기"),
+    ("7", "헷갈리는 문자 선택"),
+    ("8", "오답 복습"),
+    ("9", "오답 기록 보기"),
+    ("10", "학습 기록 보기"),
+    ("11", "일본어.md 참고 자료 보기"),
     ("0", "종료"),
 )
 REFERENCE_MENU_OPTIONS: tuple[MenuOption, ...] = (
@@ -112,6 +116,8 @@ class QuizSession:
     expected_romaji: str = ""
     choices: list[KanaEntry] | None = None
     question_entries: tuple[KanaEntry, ...] = ()
+    confusing_items: tuple[ConfusingItem, ...] = ()
+    current_hint: str = ""
     particle_items: tuple[dict[str, object], ...] = ()
     example_items: tuple[ExampleItem, ...] = ()
 
@@ -433,12 +439,14 @@ class KanaTrainerApp:
         elif value == "6":
             self.start_example_romaji_quiz()
         elif value == "7":
-            self.start_wrong_answer_review()
+            self.start_confusing_character_quiz()
         elif value == "8":
-            self.show_wrong_answer_summary()
+            self.start_wrong_answer_review()
         elif value == "9":
-            self.show_study_history_summary()
+            self.show_wrong_answer_summary()
         elif value == "10":
+            self.show_study_history_summary()
+        elif value == "11":
             self.show_reference_menu()
         elif value == "0":
             self.close()
@@ -652,6 +660,58 @@ class KanaTrainerApp:
             self.store.record(session.expected_symbol, session.expected_romaji, value)
             self.write_segments((("오답. ", "bad"), ("정답은 ", "bad"), (session.expected_romaji, "answer"), (".", "bad")))
         self.next_example_question()
+
+    def start_confusing_character_quiz(self) -> None:
+        questions = tuple(build_confusing_question_items(collect_confusing_items(), count=DEFAULT_QUESTION_COUNT))
+        entries = tuple(
+            (symbol, romaji)
+            for _script_label, symbol, romaji, _other_symbol, _other_romaji, _note in questions
+        )
+        self.session = QuizSession(title="헷갈리는 문자 선택", mode="confusing", entries=entries, confusing_items=questions)
+        self.handler = self.handle_confusing_answer
+        self.clear_output()
+        self.write("헷갈리는 문자 선택")
+        self.next_confusing_question()
+
+    def next_confusing_question(self) -> None:
+        session = self.require_session()
+        if session.index >= session.count:
+            self.finish_session()
+            return
+        session.index += 1
+        script_label, symbol, romaji, other_symbol, other_romaji, note = session.confusing_items[session.index - 1]
+        session.expected_symbol = symbol
+        session.expected_romaji = romaji
+        session.current_hint = note
+        session.choices = build_kana_question_items(((symbol, romaji), (other_symbol, other_romaji)), count=2)
+        self.set_option_buttons(
+            tuple(
+                (str(index), choice_symbol)
+                for index, (choice_symbol, _choice_romaji) in enumerate(session.choices, start=1)
+            )
+        )
+        self.write("")
+        self.write_segments(
+            (
+                (f"문제 {session.index}/{session.count}: ", "question"),
+                (f"[{script_label}] ", "menu"),
+                (romaji, "answer"),
+                (" 에 해당하는 문자는?", "question"),
+            )
+        )
+        for index, (choice_symbol, _choice_romaji) in enumerate(session.choices, start=1):
+            self.write_segments(((f"{index}. ", "menu"), (choice_symbol, "kana")))
+
+    def handle_confusing_answer(self, value: str) -> None:
+        session = self.require_session()
+        if self.is_expected_choice(value, session, compare_symbol=True):
+            session.correct += 1
+            self.write("정답.", "good")
+        else:
+            self.store.record(session.expected_symbol, session.expected_romaji, value)
+            self.write_segments((("오답. ", "bad"), ("정답은 ", "bad"), (session.expected_symbol, "answer"), (".", "bad")))
+        self.write(f"힌트: {session.current_hint}", "muted")
+        self.next_confusing_question()
 
     def is_expected_choice(self, value: str, session: QuizSession, *, compare_symbol: bool = False) -> bool:
         if not value.isdigit() or session.choices is None:
