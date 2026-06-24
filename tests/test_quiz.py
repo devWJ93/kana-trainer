@@ -5,6 +5,7 @@ from pathlib import Path
 
 from kana_trainer.cli import KANA_QUESTION_COUNT
 from kana_trainer.kana import (
+    MAX_KANA_LEVEL,
     get_kana_level_label,
     get_beginner_patterns,
     get_confusing_pairs,
@@ -26,9 +27,12 @@ from kana_trainer.quiz import (
     build_multiple_choice,
     build_particle_meaning_choice,
     build_particle_question_items,
+    build_word_meaning_choice,
+    build_word_meaning_question_items,
     build_romaji_question_items,
     collect_example_items,
     collect_confusing_items,
+    collect_word_meaning_items,
     find_entry_by_romaji,
     is_correct_romaji,
 )
@@ -64,6 +68,10 @@ class KanaDataTests(unittest.TestCase):
         self.assertNotIn(("きゃ", "kya"), get_kana("hiragana", level=2))
         self.assertIn(("きゃ", "kya"), get_kana("hiragana", level=3))
         self.assertEqual(get_kana_level_label(2), "탁음·반탁음")
+
+    def test_kana_level_four_is_word_meaning_stage(self):
+        self.assertEqual(MAX_KANA_LEVEL, 4)
+        self.assertEqual(get_kana_level_label(4), "단어 뜻 맞히기")
 
     def test_pair_by_romaji_matches_scripts(self):
         pairs = pair_by_romaji()
@@ -173,6 +181,30 @@ class QuizLogicTests(unittest.TestCase):
         self.assertEqual(len(questions), 10)
         self.assertEqual(len({item[2] for item in questions}), 10)
 
+    def test_collect_word_meaning_items_returns_script_specific_words(self):
+        hiragana_words = collect_word_meaning_items("hiragana")
+        katakana_words = collect_word_meaning_items("katakana")
+
+        self.assertGreaterEqual(len(hiragana_words), 100)
+        self.assertGreaterEqual(len(katakana_words), 100)
+        self.assertEqual(len({item[0] for item in hiragana_words}), len(hiragana_words))
+        self.assertEqual(len({item[0] for item in katakana_words}), len(katakana_words))
+        self.assertIn(("きょう", "kyou", "쿄우", "오늘/오늘날; 今日"), hiragana_words)
+        self.assertIn(("ガッコウ", "gakkou", "가(ㄲ)꼬우", "학교"), katakana_words)
+
+    def test_build_word_meaning_choice_contains_answer_once(self):
+        choices = build_word_meaning_choice("학교", collect_word_meaning_items("hiragana"), rng_seed=7)
+
+        self.assertEqual(len(choices), 4)
+        self.assertEqual(choices.count("학교"), 1)
+        self.assertEqual(len(set(choices)), 4)
+
+    def test_build_word_meaning_question_items_avoids_word_repeats(self):
+        questions = build_word_meaning_question_items(collect_word_meaning_items("hiragana"), count=20, rng_seed=7)
+
+        self.assertEqual(len(questions), 20)
+        self.assertEqual(len({item[0] for item in questions}), 20)
+
     def test_collect_confusing_items_builds_questions_for_both_sides(self):
         items = collect_confusing_items()
 
@@ -235,6 +267,8 @@ class QuizLogicTests(unittest.TestCase):
             self.assertEqual(store.unlocked_kana_level("hiragana"), 2)
             store.record_session("히라가나 Lv.2 탁음·반탁음", "romaji:hiragana:level2", correct=16, total=20)
             self.assertEqual(store.unlocked_kana_level("hiragana"), 3)
+            store.record_session("히라가나 Lv.3 작은 글자 조합", "romaji:hiragana:level3", correct=16, total=20)
+            self.assertEqual(store.unlocked_kana_level("hiragana"), 4)
 
     def test_study_history_summary_lines_handles_empty_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:

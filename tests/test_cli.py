@@ -6,7 +6,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from kana_trainer.cli import run_romaji_game
+from kana_trainer.cli import run_romaji_game, run_word_meaning_game
 from kana_trainer.quiz import StudyHistoryStore, WrongAnswerStore
 
 
@@ -52,6 +52,33 @@ class CliRomajiGameTests(unittest.TestCase):
         self.assertEqual(len(misses), 3)
         self.assertEqual(summary.total_correct, 0)
         self.assertEqual(summary.total_questions, 4)
+
+    def test_run_word_meaning_game_wins_with_unique_word_questions(self):
+        items = (
+            ("きょう", "kyou", "쿄우", "오늘/오늘날; 今日"),
+            ("しゃしん", "shashin", "샤신", "사진"),
+            ("りょこう", "ryokou", "료코-", "여행"),
+            ("おちゃ", "ocha", "오챠", "차"),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = WrongAnswerStore(Path(temp_dir) / "wrong.json")
+            history_store = StudyHistoryStore(Path(temp_dir) / "history.json")
+            output = io.StringIO()
+
+            with (
+                patch("kana_trainer.cli.build_word_meaning_question_items", return_value=list(items[:2])),
+                patch("kana_trainer.cli.build_word_meaning_choice", side_effect=[["오늘/오늘날; 今日", "사진", "여행", "차"], ["사진", "차", "여행", "오늘/오늘날; 今日"]]),
+                patch("builtins.input", side_effect=["1", "1"]),
+                redirect_stdout(output),
+            ):
+                run_word_meaning_game("히라가나 Lv.4 단어 뜻 맞히기", items, store, history_store=history_store, count=20)
+
+            summary = history_store.summary()
+
+        self.assertIn("게임 승리", output.getvalue())
+        self.assertNotIn("문제 3/", output.getvalue())
+        self.assertEqual(summary.total_correct, 2)
+        self.assertEqual(summary.total_questions, 2)
 
 
 if __name__ == "__main__":

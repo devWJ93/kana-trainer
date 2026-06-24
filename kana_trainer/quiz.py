@@ -8,10 +8,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
-from .kana import KanaEntry, get_confusing_pairs, get_kana, get_reading_examples, get_sokuon_examples
+from .kana import (
+    KanaEntry,
+    get_confusing_pairs,
+    get_kana,
+    get_reading_examples,
+    get_sokuon_examples,
+    get_word_meaning_examples,
+)
 
 ConfusingItem = tuple[str, str, str, str, str, str]
 ExampleItem = tuple[str, str, str, str, str, str]
+WordMeaningItem = tuple[str, str, str, str]
 ParticleMeaningChoice = tuple[str, str]
 ParticleItem = dict[str, object]
 KANA_LEVEL_UNLOCK_ACCURACY = 80.0
@@ -228,6 +236,44 @@ def build_particle_question_items(
     return questions
 
 
+def collect_word_meaning_items(script: str) -> tuple[WordMeaningItem, ...]:
+    normalized = script.strip().lower()
+    if normalized not in ("hiragana", "katakana"):
+        raise ValueError("script must be 'hiragana' or 'katakana'")
+    return get_word_meaning_examples(normalized)
+
+
+def build_word_meaning_choice(
+    expected_meaning: str,
+    items: Iterable[WordMeaningItem],
+    *,
+    rng_seed: int | None = None,
+) -> list[str]:
+    meanings = [meaning for _word, _romaji, _reading, meaning in items]
+    if len(set(meanings)) < 4:
+        raise ValueError("at least four unique meanings are required")
+    if expected_meaning not in meanings:
+        raise ValueError(f"unknown word meaning: {expected_meaning}")
+
+    rng = random.Random(rng_seed)
+    distractors = [meaning for meaning in dict.fromkeys(meanings) if meaning != expected_meaning]
+    choices = [expected_meaning, *rng.sample(distractors, 3)]
+    rng.shuffle(choices)
+    return choices
+
+
+def build_word_meaning_question_items(
+    items: Iterable[WordMeaningItem],
+    *,
+    count: int,
+    rng_seed: int | None = None,
+) -> list[WordMeaningItem]:
+    pool = list(items)
+    if count < 0:
+        raise ValueError("question count must be zero or greater")
+    return random.Random(rng_seed).sample(pool, min(count, len(pool)))
+
+
 def collect_example_items() -> tuple[ExampleItem, ...]:
     examples: list[ExampleItem] = []
     for script, script_label in (("hiragana", "히라가나"), ("katakana", "가타카나")):
@@ -426,7 +472,7 @@ class StudyHistoryStore:
         normalized_script = script.strip().lower()
         unlocked = 1
         records = tuple(self._record_from_item(item) for item in self.load())
-        for level in (1, 2):
+        for level in (1, 2, 3):
             required_mode = kana_level_mode(normalized_script, level)
             if any(record.mode == required_mode and record.accuracy >= KANA_LEVEL_UNLOCK_ACCURACY for record in records):
                 unlocked = level + 1

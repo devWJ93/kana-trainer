@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .kana import (
+    MAX_KANA_LEVEL,
     get_beginner_patterns,
     get_confusing_pairs,
     get_kana,
@@ -28,9 +29,12 @@ from .quiz import (
     build_multiple_choice,
     build_particle_meaning_choice,
     build_particle_question_items,
+    build_word_meaning_choice,
+    build_word_meaning_question_items,
     build_romaji_question_items,
     collect_confusing_items,
     collect_example_items,
+    collect_word_meaning_items,
     find_entry_by_romaji,
     is_correct_romaji,
     kana_level_mode,
@@ -188,6 +192,51 @@ def run_choice_quiz(
         history_store.record_session(title, mode, correct=correct, total=count)
 
 
+def run_word_meaning_game(
+    title: str,
+    items: tuple[tuple[str, str, str, str], ...],
+    store: WrongAnswerStore,
+    *,
+    history_store: StudyHistoryStore | None = None,
+    count: int = KANA_QUESTION_COUNT,
+    mode: str = "word",
+) -> None:
+    questions = build_word_meaning_question_items(items, count=count)
+    state = KanaGameState(total=len(questions))
+    print(f"\n{title}")
+    print(f"목표: {state.total}문제 전부 돌파")
+    print(f"목숨: {state.lives}/{KANA_GAME_LIVES}")
+
+    for index, (word, romaji, reading, meaning) in enumerate(questions, start=1):
+        choices = build_word_meaning_choice(meaning, items)
+        print(f"\n문제 {index}/{state.total} | 목숨 {state.lives}/{KANA_GAME_LIVES}")
+        print(f"{word} 의 뜻은?")
+        print(f"읽기 힌트: {reading} / {romaji}")
+        for choice_index, choice_meaning in enumerate(choices, start=1):
+            print(f"{choice_index}. {choice_meaning}")
+
+        answer = input("> ").strip()
+        is_correct = answer.isdigit() and 1 <= int(answer) <= len(choices) and choices[int(answer) - 1] == meaning
+        state = advance_kana_game_state(state, is_correct=is_correct)
+        if is_correct:
+            print("정답.")
+            print(f"연속 정답: {state.streak}")
+        else:
+            store.record(word, meaning, answer)
+            print(f"오답. 정답은 {meaning}.")
+            print(f"남은 목숨: {state.lives}/{KANA_GAME_LIVES}")
+        if state.finished:
+            break
+
+    if state.won:
+        print("\n게임 승리. 모든 단어를 끝까지 돌파했습니다.")
+    elif state.lost:
+        print("\n게임 종료. 목숨이 모두 사라졌습니다.")
+    print(f"결과: {state.correct}/{state.total} 정답, 최고 연속 정답 {state.best_streak}.")
+    if history_store is not None:
+        history_store.record_session(title, mode, correct=state.correct, total=state.total)
+
+
 def run_matching_quiz(
     store: WrongAnswerStore,
     *,
@@ -341,9 +390,11 @@ def run_kana_level_menu(
             unlocked_level = min(history_store.unlocked_kana_level("hiragana"), history_store.unlocked_kana_level("katakana"))
         else:
             unlocked_level = history_store.unlocked_kana_level(script)
+        max_selectable_level = MAX_KANA_LEVEL if quiz_kind == "romaji" else 3
+        unlocked_level = min(unlocked_level, max_selectable_level)
         clear_screen()
         print(f"\n{label} 레벨 선택")
-        for level in (1, 2, 3):
+        for level in range(1, max_selectable_level + 1):
             status = "해금" if level <= unlocked_level else "잠김"
             print(f"{level}. Lv.{level} {get_kana_level_label(level)} ({status})")
         print("0. 돌아가기")
@@ -351,7 +402,7 @@ def run_kana_level_menu(
 
         if choice == "0":
             return
-        if not choice.isdigit() or int(choice) not in (1, 2, 3):
+        if not choice.isdigit() or int(choice) not in range(1, max_selectable_level + 1):
             print("레벨 번호를 다시 입력하세요.")
             pause_if_interactive()
             continue
@@ -378,6 +429,15 @@ def run_kana_level_menu(
                 history_store=history_store,
                 level=level,
                 mode=f"matching:level{level}",
+            )
+        elif level == 4:
+            title = f"{label} Lv.{level} {level_label}"
+            run_word_meaning_game(
+                title,
+                collect_word_meaning_items(script),
+                store,
+                history_store=history_store,
+                mode=kana_level_mode(script, level, mode="word"),
             )
         else:
             title = f"{label} Lv.{level} {level_label}"

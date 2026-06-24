@@ -9,6 +9,7 @@ from typing import Callable
 from .cli import DEFAULT_QUESTION_COUNT, KANA_QUESTION_COUNT, MAIN_MENU_OPTIONS, default_history_path, default_store_path
 from .kana import (
     KanaEntry,
+    MAX_KANA_LEVEL,
     get_beginner_patterns,
     get_confusing_pairs,
     get_kana,
@@ -24,6 +25,7 @@ from .quiz import (
     KANA_GAME_LIVES,
     KanaGameState,
     StudyHistoryStore,
+    WordMeaningItem,
     WrongAnswerStore,
     advance_kana_game_state,
     build_confusing_question_items,
@@ -32,9 +34,12 @@ from .quiz import (
     build_multiple_choice,
     build_particle_meaning_choice,
     build_particle_question_items,
+    build_word_meaning_choice,
+    build_word_meaning_question_items,
     build_romaji_question_items,
     collect_confusing_items,
     collect_example_items,
+    collect_word_meaning_items,
     find_entry_by_romaji,
     is_correct_romaji,
     kana_level_mode,
@@ -106,12 +111,13 @@ class QuizSession:
     best_streak: int = 0
     expected_symbol: str = ""
     expected_romaji: str = ""
-    choices: list[KanaEntry] | None = None
+    choices: list[KanaEntry] | list[str] | None = None
     question_entries: tuple[KanaEntry, ...] = ()
     confusing_items: tuple[ConfusingItem, ...] = ()
     current_hint: str = ""
     particle_items: tuple[dict[str, object], ...] = ()
     example_items: tuple[ExampleItem, ...] = ()
+    word_meaning_items: tuple[WordMeaningItem, ...] = ()
     lives: int | None = None
 
 
@@ -453,8 +459,10 @@ class KanaTrainerApp:
             unlocked_level = min(self.history_store.unlocked_kana_level("hiragana"), self.history_store.unlocked_kana_level("katakana"))
         else:
             unlocked_level = self.history_store.unlocked_kana_level(script)
+        max_selectable_level = MAX_KANA_LEVEL if quiz_kind == "romaji" else 3
+        unlocked_level = min(unlocked_level, max_selectable_level)
         options: list[MenuOption] = []
-        for level in (1, 2, 3):
+        for level in range(1, max_selectable_level + 1):
             status = "해금" if level <= unlocked_level else "잠김"
             label_text = f"Lv.{level} {get_kana_level_label(level)} ({status})"
             self.write_menu_item(str(level), label_text)
@@ -467,7 +475,8 @@ class KanaTrainerApp:
         if value == "0":
             self.show_main_menu()
             return
-        if not value.isdigit() or int(value) not in (1, 2, 3):
+        max_selectable_level = MAX_KANA_LEVEL if quiz_kind == "romaji" else 3
+        if not value.isdigit() or int(value) not in range(1, max_selectable_level + 1):
             self.write("레벨 번호를 다시 입력하세요.", "bad")
             return
         level = int(value)
@@ -475,6 +484,7 @@ class KanaTrainerApp:
             unlocked_level = min(self.history_store.unlocked_kana_level("hiragana"), self.history_store.unlocked_kana_level("katakana"))
         else:
             unlocked_level = self.history_store.unlocked_kana_level(script)
+        unlocked_level = min(unlocked_level, max_selectable_level)
         if level > unlocked_level:
             self.write("아직 잠긴 레벨입니다. 이전 레벨에서 80% 이상 정답을 기록하면 해금됩니다.", "bad")
             return
@@ -488,6 +498,12 @@ class KanaTrainerApp:
             )
         elif quiz_kind == "matching":
             self.start_matching_quiz(level=level, mode=f"matching:level{level}")
+        elif level == 4:
+            self.start_word_meaning_game(
+                f"{label} Lv.{level} {level_label}",
+                collect_word_meaning_items(script),
+                mode=kana_level_mode(script, level, mode="word"),
+            )
         else:
             self.start_romaji_quiz(
                 f"{label} Lv.{level} {level_label}",
@@ -513,6 +529,81 @@ class KanaTrainerApp:
         self.write(f"목표: {question_count}문제 전부 돌파", "muted")
         self.write(f"목숨: {KANA_GAME_LIVES}/{KANA_GAME_LIVES}", "muted")
         self.next_romaji_question()
+
+    def start_word_meaning_game(
+        self,
+        title: str,
+        items: tuple[WordMeaningItem, ...],
+        *,
+        mode: str = "word",
+    ) -> None:
+        questions = tuple(build_word_meaning_question_items(items, count=KANA_QUESTION_COUNT))
+        self.session = QuizSession(
+            title=title,
+            mode=mode,
+            entries=(),
+            count=len(questions),
+            word_meaning_items=questions,
+            lives=KANA_GAME_LIVES,
+        )
+        self.handler = self.handle_word_meaning_answer
+        self.clear_output()
+        self.write(title)
+        self.write(f"목표: {len(questions)}문제 전부 돌파", "muted")
+        self.write(f"목숨: {KANA_GAME_LIVES}/{KANA_GAME_LIVES}", "muted")
+        self.next_word_meaning_question()
+
+    def next_word_meaning_question(self) -> None:
+        session = self.require_session()
+        if session.index >= session.count:
+            self.finish_session()
+            return
+        session.index += 1
+        word, romaji, reading, meaning = session.word_meaning_items[session.index - 1]
+        session.expected_symbol = word
+        session.expected_romaji = meaning
+        session.choices = build_word_meaning_choice(meaning, session.word_meaning_items)
+        self.set_option_buttons(tuple((str(index), choice) for index, choice in enumerate(session.choices, start=1)))
+        self.write("")
+        self.write(f"문제 {session.index}/{session.count} | 목숨 {session.lives}/{KANA_GAME_LIVES}", "question")
+        self.write_segments(((word, "kana"), (" 의 뜻은?", "question")))
+        self.write(f"읽기 힌트: {reading} / {romaji}", "muted")
+        for index, choice in enumerate(session.choices, start=1):
+            self.write_segments(((f"{index}. ", "menu"), (choice, None)))
+
+    def handle_word_meaning_answer(self, value: str) -> None:
+        session = self.require_session()
+        if not value.isdigit() or session.choices is None:
+            picked = ""
+            is_correct = False
+        else:
+            index = int(value) - 1
+            picked = str(session.choices[index]) if 0 <= index < len(session.choices) else ""
+            is_correct = picked == session.expected_romaji
+        state = KanaGameState(
+            total=session.count,
+            lives=session.lives or 0,
+            correct=session.correct,
+            answered=session.index - 1,
+            streak=session.streak,
+            best_streak=session.best_streak,
+        )
+        state = advance_kana_game_state(state, is_correct=is_correct)
+        session.correct = state.correct
+        session.streak = state.streak
+        session.best_streak = state.best_streak
+        session.lives = state.lives
+        if is_correct:
+            self.write("정답.", "good")
+            self.write(f"연속 정답: {session.streak}", "muted")
+        else:
+            self.store.record(session.expected_symbol, session.expected_romaji, picked or value)
+            self.write_segments((("오답. ", "bad"), ("정답은 ", "bad"), (session.expected_romaji, "answer"), (".", "bad")))
+            self.write(f"남은 목숨: {session.lives}/{KANA_GAME_LIVES}", "bad" if session.lives <= 1 else "muted")
+        if state.finished:
+            self.finish_session()
+            return
+        self.next_word_meaning_question()
 
     def next_romaji_question(self) -> None:
         session = self.require_session()
