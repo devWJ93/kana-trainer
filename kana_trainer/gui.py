@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from tkinter import font, scrolledtext, ttk
 from typing import Callable
 
-from .cli import DEFAULT_QUESTION_COUNT, KANA_QUESTION_COUNT, default_history_path, default_store_path
+from .cli import DEFAULT_QUESTION_COUNT, KANA_QUESTION_COUNT, MAIN_MENU_OPTIONS, default_history_path, default_store_path
 from .kana import (
     KanaEntry,
     get_beginner_patterns,
@@ -58,20 +58,6 @@ GLASS_THEME = {
     "muted": "#8FA3B7",
     "selection": "#1E4056",
 }
-MAIN_MENU_OPTIONS: tuple[MenuOption, ...] = (
-    ("1", "히라가나 보고 로마자 입력"),
-    ("2", "가타카나 보고 로마자 입력"),
-    ("3", "로마자 보고 히라가나 선택"),
-    ("4", "히라가나-가타카나 매칭"),
-    ("5", "조사 뜻 맞히기"),
-    ("6", "예문 로마자 입력"),
-    ("7", "헷갈리는 문자 선택"),
-    ("8", "오답 복습"),
-    ("9", "오답 기록 보기"),
-    ("10", "학습 기록 보기"),
-    ("11", "일본어.md 참고 자료 보기"),
-    ("0", "종료"),
-)
 REFERENCE_MENU_OPTIONS: tuple[MenuOption, ...] = (
     ("1", "히라가나 헷갈리는 쌍/예문"),
     ("2", "가타카나 헷갈리는 쌍/예문"),
@@ -434,22 +420,20 @@ class KanaTrainerApp:
         elif value == "2":
             self.show_kana_level_menu("katakana", "가타카나", "romaji")
         elif value == "3":
-            self.show_kana_level_menu("hiragana", "히라가나 4지선다", "choice")
-        elif value == "4":
             self.show_kana_level_menu("matching", "히라가나-가타카나 매칭", "matching")
+        elif value == "4":
+            self.show_kana_level_menu("hiragana", "히라가나 4지선다", "choice")
         elif value == "5":
             self.start_particle_meaning_quiz()
         elif value == "6":
-            self.start_example_romaji_quiz()
-        elif value == "7":
             self.start_confusing_character_quiz()
-        elif value == "8":
+        elif value == "7":
             self.start_wrong_answer_review()
-        elif value == "9":
+        elif value == "8":
             self.show_wrong_answer_summary()
-        elif value == "10":
+        elif value == "9":
             self.show_study_history_summary()
-        elif value == "11":
+        elif value == "10":
             self.show_reference_menu()
         elif value == "0":
             self.close()

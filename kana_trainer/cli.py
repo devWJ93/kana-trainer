@@ -37,6 +37,20 @@ from .terminal import clear_screen, input_prompt, pause_if_interactive
 
 DEFAULT_QUESTION_COUNT = 10
 KANA_QUESTION_COUNT = 20
+MenuOption = tuple[str, str]
+MAIN_MENU_OPTIONS: tuple[MenuOption, ...] = (
+    ("1", "히라가나 보고 로마자 입력"),
+    ("2", "가타카나 보고 로마자 입력"),
+    ("3", "히라가나-가타카나 매칭"),
+    ("4", "로마자 보고 히라가나 선택"),
+    ("5", "조사 뜻 맞히기"),
+    ("6", "헷갈리는 문자 선택"),
+    ("7", "오답 복습"),
+    ("8", "오답 기록 보기"),
+    ("9", "학습 기록 보기"),
+    ("10", "일본어.md 참고 자료 보기"),
+    ("0", "종료"),
+)
 
 
 def configure_stdio() -> None:
@@ -441,18 +455,8 @@ def run_menu() -> None:
     while True:
         clear_screen()
         print("\nかな Trainer")
-        print("1. 히라가나 보고 로마자 입력")
-        print("2. 가타카나 보고 로마자 입력")
-        print("3. 로마자 보고 히라가나 선택")
-        print("4. 히라가나-가타카나 매칭")
-        print("5. 조사 뜻 맞히기")
-        print("6. 예문 로마자 입력")
-        print("7. 헷갈리는 문자 선택")
-        print("8. 오답 복습")
-        print("9. 오답 기록 보기")
-        print("10. 학습 기록 보기")
-        print("11. 일본어.md 참고 자료 보기")
-        print("0. 종료")
+        for number, label in MAIN_MENU_OPTIONS:
+            print(f"{number}. {label}")
         choice = input("> ").strip()
 
         if choice == "1":
@@ -460,22 +464,20 @@ def run_menu() -> None:
         elif choice == "2":
             run_kana_level_menu("katakana", "가타카나", store, history_store)
         elif choice == "3":
-            run_kana_level_menu("hiragana", "히라가나 4지선다", store, history_store, quiz_kind="choice")
-        elif choice == "4":
             run_kana_level_menu("matching", "히라가나-가타카나 매칭", store, history_store, quiz_kind="matching")
+        elif choice == "4":
+            run_kana_level_menu("hiragana", "히라가나 4지선다", store, history_store, quiz_kind="choice")
         elif choice == "5":
             run_particle_meaning_quiz(history_store=history_store)
         elif choice == "6":
-            run_example_romaji_quiz(store, history_store=history_store)
-        elif choice == "7":
             run_confusing_character_quiz(store, history_store=history_store)
-        elif choice == "8":
+        elif choice == "7":
             run_wrong_answer_review(store, history_store=history_store)
-        elif choice == "9":
+        elif choice == "8":
             print_wrong_answer_summary(store)
-        elif choice == "10":
+        elif choice == "9":
             print_study_history_summary(history_store)
-        elif choice == "11":
+        elif choice == "10":
             run_reference_menu()
         elif choice == "0":
             print("다음에 또 연습해요.")
